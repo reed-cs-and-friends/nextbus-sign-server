@@ -16,6 +16,9 @@ pub enum Message {
         reason: AppRunningReason,
     },
     Reboot,
+    DebugMsg {
+        msg: String,
+    },
 }
 
 #[derive(Debug)]
@@ -95,6 +98,10 @@ impl Message {
             11 => Self::Pong {
                 seq_num: payload[0],
             },
+            6 => Self::Reboot,
+            28 => Self::DebugMsg {
+                msg: String::from_utf8(payload).expect("Invalid payload in debug message!"),
+            },
             x => todo!("unknown type: {x}"),
         })
     }
@@ -144,6 +151,7 @@ impl Message {
         match self {
             Ping { .. } => 10,
             Reboot => 6,
+            DebugMsg { .. } => 28,
             _ => todo!(),
         }
     }
@@ -153,6 +161,7 @@ impl Message {
         match self {
             Ping { seq_num } => vec![*seq_num],
             Reboot => vec![],
+            DebugMsg { msg } => msg.clone().into_bytes(),
             _ => todo!(),
         }
     }
