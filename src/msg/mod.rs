@@ -1,6 +1,7 @@
 mod app_running;
 pub mod content;
 mod debug;
+mod firmware_code;
 mod pong;
 mod reboot;
 
@@ -53,6 +54,12 @@ pub enum Message {
         zone_offset: u8,
         tz: String,
     },
+    FirmwareCode {
+        seq: u8,
+        dest_addr: u16,
+        num_bytes: u16,
+        code_chunk: Vec<u8>,
+    },
 }
 
 impl Message {
@@ -89,6 +96,7 @@ impl Message {
             6 => reboot::new(),
             28 => debug::new(payload),
             32 => content::new(payload),
+            31 => firmware_code::new(payload),
             x => todo!("unknown type: {x}"),
         })
     }
@@ -142,6 +150,7 @@ impl Message {
             ShellCommand { .. } => 80,
             ContentMsg { .. } => 32,
             SyncClock { .. } => 26,
+            FirmwareCode { .. } => 31,
             _ => todo!(),
         }
     }
@@ -207,6 +216,18 @@ impl Message {
                 out.push(*zone_offset);
                 out.push(tz.len() as u8);
                 out.extend(tz.as_bytes());
+                out
+            }
+            FirmwareCode {
+                seq,
+                dest_addr,
+                num_bytes,
+                code_chunk,
+            } => {
+                let mut out = vec![*seq];
+                out.extend(dest_addr.to_be_bytes());
+                out.extend(num_bytes.to_be_bytes());
+                out.extend(code_chunk);
                 out
             }
             _ => todo!(),
