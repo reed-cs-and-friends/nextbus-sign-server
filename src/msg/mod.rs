@@ -1,3 +1,4 @@
+mod ack_content;
 mod app_running;
 pub mod content;
 mod debug;
@@ -21,6 +22,10 @@ pub enum DecodeError {
 
 #[derive(Debug)]
 pub enum Message {
+    AckContent {
+        content_id: u16,
+        error: u8,
+    },
     Ping {
         seq_num: u8,
     },
@@ -97,6 +102,7 @@ impl Message {
             28 => debug::new(payload),
             32 => content::new(payload),
             31 => firmware_code::new(payload),
+            33 => ack_content::new(payload),
             x => todo!("unknown type: {x}"),
         })
     }
