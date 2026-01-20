@@ -1,8 +1,7 @@
 use nextbus_sign_server::Message;
-use std::io::{self, Read, Write};
+use std::io::{self, Write};
 use std::net::{TcpListener, TcpStream};
 use std::thread;
-use std::time::Duration;
 
 use anyhow::Result;
 use env_logger;
@@ -40,7 +39,11 @@ fn handle(mut stream: TcpStream) -> io::Result<()> {
     let addr = stream.peer_addr()?;
     log::info!("Handling connection from: {addr}");
 
-    let msg = Message::Ping { seq_num: 1 }.encode();
+    let msg = Message::ShellCommand {
+        command_id: 0,
+        command: "reboot".to_string(),
+    }
+    .encode();
     stream.write_all(&msg)?;
 
     loop {

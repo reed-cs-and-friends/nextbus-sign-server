@@ -19,6 +19,10 @@ pub enum Message {
     DebugMsg {
         msg: String,
     },
+    ShellCommand {
+        command: String,
+        command_id: u8,
+    },
 }
 
 #[derive(Debug)]
@@ -152,6 +156,7 @@ impl Message {
             Ping { .. } => 10,
             Reboot => 6,
             DebugMsg { .. } => 28,
+            ShellCommand { .. } => 80,
             _ => todo!(),
         }
     }
@@ -162,6 +167,16 @@ impl Message {
             Ping { seq_num } => vec![*seq_num],
             Reboot => vec![],
             DebugMsg { msg } => msg.clone().into_bytes(),
+            ShellCommand {
+                command,
+                command_id,
+            } => {
+                let mut out = vec![*command_id];
+                out.extend((command.len() as u16).to_be_bytes());
+                out.extend(command.as_bytes());
+
+                out
+            }
             _ => todo!(),
         }
     }
