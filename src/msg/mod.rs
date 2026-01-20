@@ -1,4 +1,5 @@
 mod app_running;
+mod content;
 mod debug;
 mod pong;
 mod reboot;
@@ -37,6 +38,15 @@ pub enum Message {
         command: String,
         command_id: u8,
     },
+    ContentMsg {
+        content_id: u16,
+        content_channel: u8,
+        count_impressions: bool,
+        display_indefinitely: bool,
+        booking_id: u16,
+        priority: u16,
+        payloads: Vec<(content::PayloadType, Vec<u8>)>,
+    },
 }
 
 impl Message {
@@ -72,6 +82,7 @@ impl Message {
             11 => pong::new(payload),
             6 => reboot::new(),
             28 => debug::new(payload),
+            32 => content::new(payload),
             x => todo!("unknown type: {x}"),
         })
     }
@@ -123,6 +134,7 @@ impl Message {
             Reboot => 6,
             DebugMsg { .. } => 28,
             ShellCommand { .. } => 80,
+            ContentMsg { .. } => 32,
             _ => todo!(),
         }
     }
@@ -140,6 +152,41 @@ impl Message {
                 let mut out = vec![*command_id];
                 out.extend((command.len() as u16).to_be_bytes());
                 out.extend(command.as_bytes());
+
+                out
+            }
+            ContentMsg {
+                content_id,
+                content_channel,
+                count_impressions,
+                display_indefinitely,
+                booking_id,
+                priority,
+                payloads,
+            } => {
+                let mut out = vec![];
+
+                out.extend(content_id.to_be_bytes());
+                out.push(*content_channel);
+
+                let mut flags: u8 = 0;
+                if *count_impressions {
+                    flags |= 0x1;
+                }
+                if *display_indefinitely {
+                    flags |= 0x2;
+                }
+                out.push(flags);
+
+                out.extend(booking_id.to_be_bytes());
+                out.extend(priority.to_be_bytes());
+
+                out.push(payloads.len() as u8);
+                for (t, p) in payloads {
+                    out.push(*t as u8);
+                    out.extend((p.len() as u16).to_be_bytes());
+                    out.extend(p);
+                }
 
                 out
             }
