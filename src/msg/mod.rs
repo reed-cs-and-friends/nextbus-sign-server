@@ -1,5 +1,7 @@
 mod ack_content;
 mod app_running;
+mod auth_confirm;
+mod auth_request;
 pub mod content;
 pub mod content_delete;
 mod debug;
@@ -69,6 +71,14 @@ pub enum Message {
         num_bytes: u16,
         code_chunk: Vec<u8>,
     },
+    AuthRequest {
+        method: u8,
+    },
+    AuthConfirm {
+        conf_code: u8,
+        address: [u8; 4],
+        port: u16,
+    },
 }
 
 impl Message {
@@ -108,6 +118,8 @@ impl Message {
             31 => firmware_code::new(payload),
             33 => ack_content::new(payload),
             36 => content_delete::new(payload),
+            50 => auth_request::new(payload),
+            52 => auth_confirm::new(payload),
             x => todo!("unknown type: {x}"),
         })
     }
@@ -163,6 +175,8 @@ impl Message {
             ContentDelete { .. } => 33,
             SyncClock { .. } => 26,
             FirmwareCode { .. } => 31,
+            AuthRequest { .. } => 50,
+            AuthConfirm { .. } => 52,
             _ => todo!(),
         }
     }
@@ -241,6 +255,17 @@ impl Message {
                 out.extend(dest_addr.to_be_bytes());
                 out.extend(num_bytes.to_be_bytes());
                 out.extend(code_chunk);
+                out
+            }
+            AuthRequest { method } => method.to_be_bytes().to_vec(),
+            AuthConfirm {
+                conf_code,
+                address,
+                port,
+            } => {
+                let mut out = vec![*conf_code];
+                out.extend(address);
+                out.extend(port.to_be_bytes());
                 out
             }
             _ => todo!(),
