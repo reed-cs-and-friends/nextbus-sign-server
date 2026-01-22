@@ -23,6 +23,8 @@ pub enum DecodeError {
     Io(#[from] std::io::Error),
     #[error("Checksum mismatch. Decoded {0}, calculated {1}")]
     ChecksumMismatch(u16, u16),
+    #[error("Unknown message of type: {0}")]
+    UnknownMessage(u8),
 }
 
 #[derive(Debug)]
@@ -166,7 +168,9 @@ impl Message {
             15 => stop_cfg::new_ack(payload),
             16 => stop_cfg::new_clear(),
             17 => stop_cfg::new_clear_ack(),
-            x => todo!("unknown type: {x}"),
+            x => {
+                return Err(DecodeError::UnknownMessage(x));
+            }
         })
     }
 
