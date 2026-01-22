@@ -1,6 +1,5 @@
 use std::io::Write;
 use std::net::TcpStream;
-use std::sync::Arc;
 
 use crate::msg::Message;
 use crossbeam::channel;
