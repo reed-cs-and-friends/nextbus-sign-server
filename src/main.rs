@@ -1,5 +1,5 @@
 use nextbus_sign_server::msg::{self, Message};
-use std::io::{self, Write};
+use std::io;
 use std::net::{TcpListener, TcpStream};
 use std::thread;
 
@@ -35,14 +35,13 @@ fn main() {
     }
 }
 
-fn handle(mut stream: TcpStream) -> io::Result<()> {
+fn handle(stream: TcpStream) -> io::Result<()> {
     let addr = stream.peer_addr()?;
     log::info!("Handling connection from: {addr}");
 
-    let msg = Message::ContentDelete { content_id: 0 }.encode();
-    stream.write_all(&msg)?;
+    let (s, r) = nextbus_sign_server::run(stream);
 
-    let msg = Message::ContentMsg {
+    s.send(Message::ContentMsg {
         content_id: 0xff,
         content_channel: 2,
         count_impressions: false,
@@ -53,12 +52,12 @@ fn handle(mut stream: TcpStream) -> io::Result<()> {
             msg::content::PayloadType::Msg,
             "chomp :3".as_bytes().to_vec(),
         )],
-    }
-    .encode();
-    stream.write_all(&msg)?;
+    })
+    .unwrap();
 
-    loop {
-        let msg = Message::decode(&mut stream).expect("lol");
+    for msg in r {
         log::info!("ljk;sedf: {msg:?}");
     }
+
+    Ok(())
 }
