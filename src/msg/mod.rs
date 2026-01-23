@@ -248,6 +248,7 @@ impl Message {
         use Message::*;
         match self {
             Ping { seq_num } => vec![*seq_num],
+            Pong { seq_num } => vec![*seq_num],
             Reboot => vec![],
             DebugMsg { msg } => msg.clone().into_bytes(),
             ShellCommand {
