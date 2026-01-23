@@ -28,7 +28,7 @@ pub fn run(
                 Ok(m) => m,
                 Err(e) => {
                     log::error!("Failed reading from TCP stream: {e}");
-                    continue;
+                    break;
                 }
             };
 

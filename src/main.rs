@@ -1,14 +1,14 @@
-use crossbeam::channel::{self, select};
-use nextbus_sign_server::msg::{Message, content::PayloadType};
-use rouille::Response;
-use std::io::{self, Read};
+use std::io::Read;
 use std::net::{TcpListener, TcpStream};
 use std::sync::Arc;
 use std::thread;
 
-use anyhow::Result;
+use anyhow::{Result, bail};
+use crossbeam::channel::{self, select};
 use env_logger;
 use log;
+use nextbus_sign_server::msg::{Message, content::PayloadType};
+use rouille::Response;
 
 fn main() {
     env_logger::init();
@@ -65,7 +65,7 @@ fn main() {
     }
 }
 
-fn handle(stream: TcpStream, msg_ch: Arc<channel::Receiver<String>>) -> io::Result<()> {
+fn handle(stream: TcpStream, msg_ch: Arc<channel::Receiver<String>>) -> Result<()> {
     let addr = stream.peer_addr()?;
     log::info!("Handling connection from: {addr}");
 
@@ -93,8 +93,12 @@ fn handle(stream: TcpStream, msg_ch: Arc<channel::Receiver<String>>) -> io::Resu
                     Err(e) => log::error!("Failed to receive text message from channel: {e}"),
                 }
             }
-            recv(r) -> msg => {
-                log::info!("Recv'd: {msg:?}");
+            recv(r) -> msg => match msg {
+                Ok(msg) => log::info!("Recv'd: {msg:?}"),
+                Err(e) => {
+                    log::error!("Failed to receive sign message from channel: {e}");
+                    bail!("Sign server terminated.")
+                }
             }
         );
     }
