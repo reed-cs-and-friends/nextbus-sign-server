@@ -31,10 +31,6 @@ pub enum DecodeError {
 
 #[derive(Debug)]
 pub enum Message {
-    AckContent {
-        content_id: u16,
-        error: u8,
-    },
     Ping {
         seq_num: u8,
     },
@@ -62,8 +58,16 @@ pub enum Message {
         priority: u16,
         payloads: Vec<(content::PayloadType, Vec<u8>)>,
     },
+    AckContent {
+        content_id: u16,
+        error: u8,
+    },
     ContentDelete {
         content_id: u16,
+    },
+    AckContentDelete {
+        content_id: u16,
+        error: u8,
     },
     SyncClock {
         seq_num: u8,
@@ -169,6 +173,7 @@ impl Message {
             31 => firmware_code::new(payload),
             33 => ack_content::new(payload),
             36 => content_delete::new(payload),
+            37 => content_delete::new_ack(payload),
             50 => auth_request::new(payload),
             52 => auth_confirm::new(payload),
             26 => clock::new_sync(payload),
@@ -241,7 +246,9 @@ impl Message {
             DebugMsg { .. } => 28,
             ShellCommand { .. } => 80,
             ContentMsg { .. } => 32,
-            ContentDelete { .. } => 33,
+            AckContent { .. } => 33,
+            ContentDelete { .. } => 36,
+            AckContentDelete { .. } => 37,
             MarkClock { .. } => 24,
             AckMarkClock { .. } => 25,
             SyncClock { .. } => 26,
@@ -314,7 +321,23 @@ impl Message {
                 }
                 out
             }
+            AckContent { content_id, error } => {
+                let mut out = vec![];
+
+                out.extend(content_id.to_be_bytes());
+                out.push(*error);
+
+                return out;
+            }
             ContentDelete { content_id } => content_id.to_be_bytes().to_vec(),
+            AckContentDelete { content_id, error } => {
+                let mut out = vec![];
+
+                out.extend(content_id.to_be_bytes());
+                out.push(*error);
+
+                return out;
+            }
             MarkClock { sequence } => vec![*sequence],
             AckMarkClock { seq_num } => vec![*seq_num],
             SyncClock {
