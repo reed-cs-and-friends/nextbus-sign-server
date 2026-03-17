@@ -5,6 +5,7 @@ mod auth_request;
 mod cfg_params;
 mod clock;
 pub mod content;
+pub mod content_count;
 pub mod content_delete;
 mod debug;
 mod firmware_code;
@@ -68,6 +69,14 @@ pub enum Message {
     AckContentDelete {
         content_id: u16,
         error: u8,
+    },
+    ContentCount {
+        content_id: u16,
+    },
+    AckContentCount {
+        content_id: u16,
+        error: u8,
+        data: [u16; 24],
     },
     SyncClock {
         seq_num: u8,
@@ -174,6 +183,8 @@ impl Message {
             33 => ack_content::new(payload),
             36 => content_delete::new(payload),
             37 => content_delete::new_ack(payload),
+            38 => content_count::new(payload),
+            39 => content_count::new_ack(payload),
             50 => auth_request::new(payload),
             52 => auth_confirm::new(payload),
             26 => clock::new_sync(payload),
@@ -249,6 +260,8 @@ impl Message {
             AckContent { .. } => 33,
             ContentDelete { .. } => 36,
             AckContentDelete { .. } => 37,
+            ContentCount { .. } => 38,
+            AckContentCount { .. } => 39,
             MarkClock { .. } => 24,
             AckMarkClock { .. } => 25,
             SyncClock { .. } => 26,
@@ -335,6 +348,23 @@ impl Message {
 
                 out.extend(content_id.to_be_bytes());
                 out.push(*error);
+
+                return out;
+            }
+            ContentCount { content_id } => content_id.to_be_bytes().to_vec(),
+            AckContentCount {
+                content_id,
+                error,
+                data,
+            } => {
+                let mut out = vec![];
+
+                out.extend(content_id.to_be_bytes());
+                out.push(*error);
+                out.extend(data.iter().fold(vec![], |mut acc, s| {
+                    acc.extend(s.to_be_bytes().to_vec());
+                    return acc;
+                }));
 
                 return out;
             }
