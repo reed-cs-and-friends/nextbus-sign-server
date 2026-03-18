@@ -7,6 +7,7 @@ mod clock;
 pub mod content;
 pub mod content_count;
 pub mod content_delete;
+pub mod content_schedule;
 mod debug;
 mod firmware_code;
 pub mod ping;
@@ -77,6 +78,17 @@ pub enum Message {
         content_id: u16,
         error: u8,
         data: [u16; 24],
+    },
+    ContentSchedule {
+        content_id: u16,
+        min_time: u64,
+        /// Note: a value of None indicates that the content is scheduled indefinitely.
+        /// A length of zero indicates that the content is never scheduled.
+        start_stop_times: Option<Vec<content_schedule::Schedule>>,
+    },
+    AckContentSchedule {
+        content_id: u16,
+        error: u8,
     },
     SyncClock {
         seq_num: u8,
@@ -181,6 +193,8 @@ impl Message {
             32 => content::new(payload),
             31 => firmware_code::new(payload),
             33 => ack_content::new(payload),
+            34 => content_schedule::new(payload),
+            35 => content_schedule::new_ack(payload),
             36 => content_delete::new(payload),
             37 => content_delete::new_ack(payload),
             38 => content_count::new(payload),
@@ -262,6 +276,8 @@ impl Message {
             AckContentDelete { .. } => 37,
             ContentCount { .. } => 38,
             AckContentCount { .. } => 39,
+            ContentSchedule { .. } => 34,
+            AckContentSchedule { .. } => 35,
             MarkClock { .. } => 24,
             AckMarkClock { .. } => 25,
             SyncClock { .. } => 26,
@@ -367,6 +383,50 @@ impl Message {
                 }));
 
                 return out;
+            }
+            ContentSchedule {
+                content_id,
+                min_time,
+                start_stop_times,
+            } => {
+                let mut out = Vec::new();
+                out.extend(content_id.to_be_bytes());
+
+                if let Some(start_stop_times) = start_stop_times {
+                    let num_deltas = start_stop_times
+                        .len()
+                        .clamp(0, content_schedule::MAX_SCHEDULES.into());
+                    out.push(num_deltas as u8);
+
+                    if num_deltas != 0 {
+                        let min_time_s = (min_time / 1_000) as u32;
+                        out.extend(u32::to_be_bytes(min_time_s));
+
+                        for content_schedule::Schedule { start, stop } in
+                            start_stop_times.iter().take(num_deltas)
+                        {
+                            let start_dt_ms = start - min_time;
+                            let stop_dt_ms = stop - min_time;
+
+                            let start_dt_mins = (start_dt_ms / 60_000) as u16;
+                            let stop_dt_mins = (stop_dt_ms / 60_000) as u16;
+
+                            out.extend(u16::to_be_bytes(start_dt_mins));
+                            out.extend(u16::to_be_bytes(stop_dt_mins));
+                        }
+                    }
+                } else {
+                    let num_deltas = content_schedule::INDEFINITE_CODE;
+                    out.push(num_deltas);
+                }
+
+                out
+            }
+            AckContentSchedule { content_id, error } => {
+                let mut out = Vec::new();
+                out.extend(content_id.to_be_bytes());
+                out.push(*error);
+                out
             }
             MarkClock { sequence } => vec![*sequence],
             AckMarkClock { seq_num } => vec![*seq_num],
