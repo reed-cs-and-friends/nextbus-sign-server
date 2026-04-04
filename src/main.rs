@@ -23,6 +23,7 @@ fn main() {
     fn inner() -> Result<()> {
         let (s, r) = channel::unbounded();
         let r = Arc::new(r);
+        let s = Arc::new(s);
 
         thread::spawn(move || {
             let listener = TcpListener::bind("0.0.0.0:4502").unwrap();
@@ -42,6 +43,16 @@ fn main() {
             }
         });
 
+        let sp = s.clone();
+        thread::spawn(move || {
+            loop {
+                if let Err(e) = sp.send(Instruction::Sync) {
+                    log::error!("Failed to instruct sync: {e}");
+                }
+                thread::sleep(Duration::from_mins(1));
+            }
+        });
+
         rouille::start_server("0.0.0.0:8080", move |request| {
             if request.method() == "POST" && request.url() == "/write" {
                 let Some(mut body) = request.data() else {
@@ -54,7 +65,7 @@ fn main() {
                     return Response::text("Can't read request body.").with_status_code(500);
                 };
 
-                if let Err(e) = s.send(text) {
+                if let Err(e) = s.send(Instruction::SetText(text)) {
                     log::error!("Channel sending error: {e}");
                     return Response::text("Can't send over channel.").with_status_code(500);
                 };
@@ -73,7 +84,12 @@ struct ClockMark {
     seq_num: u8,
 }
 
-fn handle(stream: TcpStream, msg_ch: Arc<channel::Receiver<String>>) -> Result<()> {
+enum Instruction {
+    SetText(String),
+    Sync,
+}
+
+fn handle(stream: TcpStream, msg_ch: Arc<channel::Receiver<Instruction>>) -> Result<()> {
     let addr = stream.peer_addr()?;
     log::info!("Handling connection from: {addr}");
 
@@ -85,7 +101,7 @@ fn handle(stream: TcpStream, msg_ch: Arc<channel::Receiver<String>>) -> Result<(
         select!(
             recv(msg_ch) -> msg => {
                 match msg {
-                    Ok(msg) => {
+                    Ok(Instruction::SetText(msg)) => {
                         if let Err(e) = s.send(Message::ContentMsg {
                             content_id: 0x11,
                             content_channel: 2,
@@ -99,6 +115,29 @@ fn handle(stream: TcpStream, msg_ch: Arc<channel::Receiver<String>>) -> Result<(
                             )],
                         }) {
                             log::error!("Failed setting message: {msg}: {e}");
+                        }
+                    },
+                    Ok(Instruction::Sync) => {
+                        log::info!("Requesting clock mark.");
+
+                        let time = match SystemTime::now().duration_since(SystemTime::UNIX_EPOCH) {
+                            Err(e) => {
+                                log::warn!("Epcoh was not before current time: {e}. Skipping clock sync.");
+                                continue;
+                            },
+                            Ok(time) => time.as_secs().try_into().unwrap_or_else(|_| {
+                                log::warn!("Time overflowing 32 bit repr.");
+                                time.as_secs() as u32
+                            }),
+                        };
+
+                        clk_mark = Some(ClockMark {
+                            seq_num: rng().next_u32() as u8,
+                            epoch_sec: time,
+                        });
+
+                        if let Err(e) = s.send(Message::MarkClock { sequence: clk_mark.unwrap().seq_num }) {
+                            log::error!("Failed to send MarkClock: {e}");
                         }
                     },
                     Err(e) => log::error!("Failed to receive text message from channel: {e}"),
@@ -116,29 +155,6 @@ fn handle(stream: TcpStream, msg_ch: Arc<channel::Receiver<String>>) -> Result<(
                 Err(e) => {
                     log::error!("Failed to receive sign message from channel: {e}");
                     bail!("Sign server terminated.")
-                }
-            },
-            default(Duration::from_mins(1)) => {
-                log::info!("Requesting clock mark.");
-
-                let time = match SystemTime::now().duration_since(SystemTime::UNIX_EPOCH) {
-                    Err(e) => {
-                        log::warn!("Epcoh was not before current time: {e}. Skipping clock sync.");
-                        continue;
-                    },
-                    Ok(time) => time.as_secs().try_into().unwrap_or_else(|_| {
-                        log::warn!("Time overflowing 32 bit repr.");
-                        time.as_secs() as u32
-                    }),
-                };
-
-                clk_mark = Some(ClockMark {
-                    seq_num: rng().next_u32() as u8,
-                    epoch_sec: time,
-                });
-
-                if let Err(e) = s.send(Message::MarkClock { sequence: clk_mark.unwrap().seq_num }) {
-                    log::error!("Failed to send MarkClock: {e}");
                 }
             },
         );
