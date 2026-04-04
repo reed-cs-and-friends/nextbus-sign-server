@@ -2,12 +2,14 @@ use std::io::Read;
 use std::net::{TcpListener, TcpStream};
 use std::sync::Arc;
 use std::thread;
+use std::time::{Duration, SystemTime};
 
 use anyhow::{Result, bail};
 use crossbeam::channel::{self, select};
 use env_logger;
 use log;
 use nextbus_sign_server::msg::{Message, content::PayloadType};
+use rand::{Rng, rng};
 use rouille::Response;
 
 fn main() {
@@ -65,18 +67,26 @@ fn main() {
     }
 }
 
+#[derive(Clone, Copy)]
+struct ClockMark {
+    epoch_sec: u32, // 2038 will never happen.
+    seq_num: u8,
+}
+
 fn handle(stream: TcpStream, msg_ch: Arc<channel::Receiver<String>>) -> Result<()> {
     let addr = stream.peer_addr()?;
     log::info!("Handling connection from: {addr}");
 
     let (s, r) = nextbus_sign_server::run(stream);
 
+    let mut clk_mark = None;
+
     loop {
         select!(
             recv(msg_ch) -> msg => {
                 match msg {
                     Ok(msg) => {
-                        s.send(Message::ContentMsg {
+                        if let Err(e) = s.send(Message::ContentMsg {
                             content_id: 0x11,
                             content_channel: 2,
                             count_impressions: false,
@@ -87,16 +97,17 @@ fn handle(stream: TcpStream, msg_ch: Arc<channel::Receiver<String>>) -> Result<(
                                 PayloadType::Msg,
                                 msg.as_bytes().to_vec(),
                             )],
-                        })
-                        .unwrap();
+                        }) {
+                            log::error!("Failed setting message: {msg}: {e}");
+                        }
                     },
                     Err(e) => log::error!("Failed to receive text message from channel: {e}"),
                 }
-            }
+            },
             recv(r) -> msg => match msg {
                 Ok(msg) => {
                     log::info!("Recv'd: {msg:?}");
-                    if let Some(resp) = respond_to(msg) {
+                    if let Some(resp) = respond_to(msg, clk_mark) {
                         if let Err(e) = s.send(resp) {
                             log::error!("Failed to send sign message to channel: {e}");
                         };
@@ -106,14 +117,54 @@ fn handle(stream: TcpStream, msg_ch: Arc<channel::Receiver<String>>) -> Result<(
                     log::error!("Failed to receive sign message from channel: {e}");
                     bail!("Sign server terminated.")
                 }
-            }
+            },
+            default(Duration::from_mins(1)) => {
+                log::info!("Requesting clock mark.");
+
+                let time = match SystemTime::now().duration_since(SystemTime::UNIX_EPOCH) {
+                    Err(e) => {
+                        log::warn!("Epcoh was not before current time: {e}. Skipping clock sync.");
+                        continue;
+                    },
+                    Ok(time) => time.as_secs().try_into().unwrap_or_else(|_| {
+                        log::warn!("Time overflowing 32 bit repr.");
+                        time.as_secs() as u32
+                    }),
+                };
+
+                clk_mark = Some(ClockMark {
+                    seq_num: rng().next_u32() as u8,
+                    epoch_sec: time,
+                });
+
+                if let Err(e) = s.send(Message::MarkClock { sequence: clk_mark.unwrap().seq_num }) {
+                    log::error!("Failed to send MarkClock: {e}");
+                }
+            },
         );
     }
 }
 
-fn respond_to(msg: Message) -> Option<Message> {
+fn respond_to(msg: Message, clk_mark: Option<ClockMark>) -> Option<Message> {
     match msg {
         Message::Ping { seq_num } => Some(Message::Pong { seq_num }),
+        Message::AckMarkClock { seq_num } => match clk_mark {
+            None => {
+                log::warn!("Received unrequested AckMarkClock.");
+                None
+            }
+            Some(ClockMark { seq_num: x, .. }) if x != seq_num => {
+                log::warn!("Wrong MarkClock Ack'd: Saw {seq_num}, expected {x}");
+                None
+            }
+            Some(mark) => Some(Message::SyncClock {
+                epoch_time_sec: mark.epoch_sec,
+                seq_num,
+                // TODO
+                tz: "GMT-07:00".to_string(),
+                zone_offset: 0, // unused so far as I can tell
+            }),
+        },
         _ => None,
     }
 }

@@ -93,6 +93,7 @@ pub enum Message {
     SyncClock {
         seq_num: u8,
         epoch_time_sec: u32,
+        /// This offset appears to be unused.
         zone_offset: u8,
         tz: String,
     },
