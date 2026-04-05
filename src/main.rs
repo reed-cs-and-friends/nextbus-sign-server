@@ -179,7 +179,7 @@ fn respond_to(msg: Message, clk_mark: Option<ClockMark>) -> Option<Message> {
                 Some(Message::SyncClock {
                     epoch_time_sec: mark.epoch_sec,
                     seq_num,
-                    tz: format!("GMT-{}", mark.offset),
+                    tz: format!("GMT{}", mark.offset),
                     zone_offset: 0, // unused so far as I can tell
                 })
             }
