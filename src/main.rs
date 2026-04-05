@@ -5,6 +5,7 @@ use std::thread;
 use std::time::{Duration, SystemTime};
 
 use anyhow::{Result, bail};
+use chrono::{FixedOffset, Offset};
 use crossbeam::channel::{self, select};
 use env_logger;
 use log;
@@ -14,7 +15,6 @@ use rouille::Response;
 
 fn main() {
     env_logger::init();
-
     if let Err(e) = inner() {
         log::error!("Fatal error: {e:?}");
         std::process::exit(1);
@@ -82,6 +82,7 @@ fn main() {
 struct ClockMark {
     epoch_sec: u32, // 2038 will never happen.
     seq_num: u8,
+    offset: FixedOffset,
 }
 
 enum Instruction {
@@ -134,6 +135,7 @@ fn handle(stream: TcpStream, msg_ch: Arc<channel::Receiver<Instruction>>) -> Res
                         clk_mark = Some(ClockMark {
                             seq_num: rng().next_u32() as u8,
                             epoch_sec: time,
+                            offset: chrono::Local::now().offset().fix(),
                         });
 
                         if let Err(e) = s.send(Message::MarkClock { sequence: clk_mark.unwrap().seq_num }) {
@@ -173,13 +175,14 @@ fn respond_to(msg: Message, clk_mark: Option<ClockMark>) -> Option<Message> {
                 log::warn!("Wrong MarkClock Ack'd: Saw {seq_num}, expected {x}");
                 None
             }
-            Some(mark) => Some(Message::SyncClock {
-                epoch_time_sec: mark.epoch_sec,
-                seq_num,
-                // TODO
-                tz: "GMT-07:00".to_string(),
-                zone_offset: 0, // unused so far as I can tell
-            }),
+            Some(mark) => {
+                Some(Message::SyncClock {
+                    epoch_time_sec: mark.epoch_sec,
+                    seq_num,
+                    tz: format!("GMT-{}", mark.offset),
+                    zone_offset: 0, // unused so far as I can tell
+                })
+            }
         },
         _ => None,
     }

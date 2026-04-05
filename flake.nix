@@ -18,7 +18,7 @@
           pname = "nextbus-sign-server";
           version = "0.1.0";
           src = ./.;
-          cargoHash = "sha256-L1Il1QmE1LPf6QUvW4rfpfp8niyjb4+M87G05AGXUTs=";
+          cargoHash = "sha256-N5ddtZWzMydDoczA52ArDiCwJovS5Jq7fkMvm6njA7c=";
         });
     };
 }
